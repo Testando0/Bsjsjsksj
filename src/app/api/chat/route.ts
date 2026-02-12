@@ -4,37 +4,43 @@ export async function POST(req: Request) {
   try {
     const { message, history } = await req.json();
 
-    const response = await fetch(process.env.CRIS_API_URL!, {
+    // URL específica do seu Manus IA
+    const endpoint = "https://cris-api-ibornqs6.manus.space/v1/chat/completions";
+    const apiKey = process.env.CRIS_API_KEY;
+
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.CRIS_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "crisalida", // Modelo padrão recomendado pela sua doc
+        model: "crisalida", 
         messages: [
           ...history,
           { role: "user", content: message }
         ],
-        stream: false,
-        temperature: 0.7
+        stream: false // Para evitar complexidade de streaming por enquanto
       })
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      return NextResponse.json({ error: `Erro na API: ${response.status}` }, { status: response.status });
+    const responseText = await response.text();
+
+    // Se o Manus devolver HTML (página de erro), capturamos aqui
+    if (responseText.includes("<!doctype") || responseText.includes("<html")) {
+      console.error("Recebido HTML em vez de JSON. Verifique se a rota /v1/chat/completions existe no seu Manus.");
+      return NextResponse.json({ error: "A API do Manus retornou uma página web (HTML) em vez de dados." }, { status: 500 });
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
     
-    // O caminho exato segundo sua doc: choices[0].message.content
-    const reply = data.choices[0].message.content;
+    // Mapeamento exato da resposta da sua doc
+    const reply = data.choices?.[0]?.message?.content || "A IA não retornou conteúdo.";
 
     return NextResponse.json({ reply });
 
   } catch (error) {
-    console.error("Erro no servidor:", error);
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
+    console.error("Erro Crítico:", error);
+    return NextResponse.json({ error: 'Falha na comunicação com o servidor Manus.' }, { status: 500 });
   }
 }
